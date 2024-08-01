@@ -1,15 +1,17 @@
 package search
 
+import     "core:sort"
 import     "core:c"
 import     "core:os"
 import     "core:fmt"
+import path "core:path/filepath"
 import     "core:slice"
 import     "core:strings"
 import     "base:runtime"
 import ray "vendor:raylib"
 import     "core:unicode/utf8"
 
-SCREEN_WIDTH  :: 480
+SCREEN_WIDTH  :: 320
 SCREEN_HEIGHT :: 240
 
 Textbox := struct {
@@ -23,18 +25,20 @@ Textbox := struct {
 }
 
 List := struct {
-	focus              : c.int,
-	active             : c.int,
-	list_size          : c.int,
-	scroll_index       : c.int,
-	dirs               : []string,
-	exec_names         : []cstring,
-	execs_fuzzied      : [^]cstring,
-	exec_names_trimmed : ^[]cstring,
-	execs_dir          : ray.FilePathList,
+	focus        : c.int,
+	active       : c.int,
+	size         : c.int,
+	scroll_index : c.int,
+
+	execs_fuzzied     : []cstring,
+	execs_untrimmed   : []cstring,
+	execs_searched    : [^]cstring,
+	execs_non_fuzzied : [dynamic]cstring,
+	execs_trimmed     : [dynamic]cstring,
+	execs_dir         : ray.FilePathList,
 } {
-	list_size = 10,
-	dirs      = {"/run/current-system/sw/bin/","/home/Luca/.nix-profile/bin/"},
+	size          = 5,
+	execs_trimmed = make([dynamic]cstring),
 }
 
 input :: proc() -> cstring {
@@ -52,7 +56,7 @@ input :: proc() -> cstring {
 	return strings.to_cstring(&Textbox.input_builder)	
 }
 
-fuzzy :: proc(input: cstring, dictionary: ^[dynamic]cstring, results: int = 100) -> []cstring {
+fuzzy :: proc(input: cstring, dictionary: ^[dynamic]cstring, results: int) -> []cstring {
 	scores := make(map[int][dynamic]cstring)
 	defer delete(scores)
 
@@ -89,20 +93,24 @@ fuzzy :: proc(input: cstring, dictionary: ^[dynamic]cstring, results: int = 100)
 }
 
 trimmer :: proc() -> [dynamic]cstring {
-	file_list : [dynamic]cstring = make([dynamic]cstring)
+	#no_bounds_check env : [^]cstring = &runtime.args__[len(runtime.args__) + 1]
+	path_var             : string     = string(env[162])
 
-	for &dir in List.dirs {
-		List.execs_dir  = ray.LoadDirectoryFiles(strings.clone_to_cstring(strings.trim_suffix((dir),"/")))
-		List.exec_names = List.execs_dir.paths[:List.execs_dir.count]
+	for execs_dir in strings.split_iterator(&path_var, ":") {
+		List.execs_dir            = ray.LoadDirectoryFiles(strings.clone_to_cstring(execs_dir))
+		List.execs_untrimmed = List.execs_dir.paths[:List.execs_dir.count]
 
-		for &exec_name in List.exec_names {
-			exec_name = strings.clone_to_cstring(strings.trim_prefix(string(exec_name), dir))
-	
-			append(&file_list, exec_name)
+		for &exec in List.execs_untrimmed {
+			exec = strings.clone_to_cstring(path.base(string(exec)))
+
+			append(&List.execs_trimmed, exec)
 		}
 	}
 
-	return file_list
+	sort.quick_sort(List.execs_trimmed[:])
+	execs_sorted := slice.clone_to_dynamic(slice.unique(List.execs_trimmed[:]))
+
+	return execs_sorted
 }
 
 main :: proc() {
@@ -113,11 +121,8 @@ main :: proc() {
 
 	Textbox.input_text = input()
 
-	exec_names_trimmed : [dynamic]cstring
-
-	exec_names_trimmed = trimmer()
-
-	defer delete(exec_names_trimmed)
+	List.execs_non_fuzzied = trimmer()
+	defer delete(List.execs_non_fuzzied)
 
 	for !ray.WindowShouldClose() {
 		ray.BeginDrawing()
@@ -125,27 +130,34 @@ main :: proc() {
 
 		ray.ClearBackground(ray.RAYWHITE)
 
-		execs_list_fuzzied := fuzzy(Textbox.input_text,&exec_names_trimmed,10)
-		defer delete(execs_list_fuzzied)
+		List.execs_fuzzied = fuzzy(Textbox.input_text,&List.execs_non_fuzzied,int(List.size))
+		defer delete(List.execs_fuzzied)
 
-		List.execs_fuzzied = raw_data(execs_list_fuzzied)
+		List.execs_searched = raw_data(List.execs_fuzzied)
 
-		ray.GuiLabel(ray.Rectangle{300,80,40,30} , "Search")
+		ray.GuiLabel(ray.Rectangle{140,10,40,30} , "Search")
 
-		ray.GuiTextBox(ray.Rectangle{245,110,150,20} , Textbox.input_text , Textbox.buffer_size , true)
+		ray.GuiTextBox(ray.Rectangle{110,35,100,20} , Textbox.input_text , Textbox.buffer_size , true)
 
-		if ray.IsKeyPressed(ray.KeyboardKey.TAB) {
+		ray.GuiListViewEx(ray.Rectangle{92,70,130,155} , List.execs_searched , List.size , &List.scroll_index , &List.active , &List.focus)
+
+		if !ray.IsKeyDown(ray.KeyboardKey.RIGHT_SHIFT) && ray.IsKeyPressed(ray.KeyboardKey.TAB) {
 			List.active       += 1
-			List.scroll_index += 1
+
+			if List.active == 5 do List.active = 0
+		}
+
+		if ray.IsKeyDown(ray.KeyboardKey.RIGHT_SHIFT) && ray.IsKeyPressed(ray.KeyboardKey.TAB) {
+			List.active       -= 1
+
+			if List.active < 0 do List.active = 4
 		}
 
 		if ray.IsKeyPressed(ray.KeyboardKey.ENTER) {
-			command_path : string = string(List.execs_fuzzied[List.active])
+			command_path : string = string(List.execs_searched[List.active])
 
 			os.execvp(command_path , nil)
 		}
-
-		ray.GuiListViewEx(ray.Rectangle{10,10,150,220} , List.execs_fuzzied , List.list_size , &List.scroll_index , &List.active , &List.focus)
 	}
 }
 
