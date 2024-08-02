@@ -2,7 +2,7 @@
 - Uses the Levenshtein algorithm for fuzzy matching.
 - Scans the `PATH` variable to gather all executables.
 
-![Search](./Search.png)
+![Search](./Screenshots/Search.png)
 
 ## Special Thanks
 - [RayLib](https://github.com/raysan5/raylib)
