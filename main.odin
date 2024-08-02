@@ -1,27 +1,53 @@
 package search
 
-import     "core:sort"
-import     "core:c"
-import     "core:os"
-import     "core:fmt"
+import      "core:c"
+import      "core:os"
+import      "core:fmt"
+import      "core:sort"
+import      "core:slice"
+import      "base:runtime"
+import str  "core:strings"
+import ray  "vendor:raylib"
+import      "core:unicode/utf8"
 import path "core:path/filepath"
-import     "core:slice"
-import     "core:strings"
-import     "base:runtime"
-import ray "vendor:raylib"
-import     "core:unicode/utf8"
 
 SCREEN_WIDTH  :: 320
 SCREEN_HEIGHT :: 240
 
+Position := struct {
+	x: f32,
+	y: f32,
+} {
+	x = 0,
+	y = 0,
+}
+
+Size := struct {
+	w: f32,
+	h: f32,
+} {
+	w = 0,
+	h = 0,
+}
+
 Textbox := struct {
 	count         : int,
+	edit_mode     : bool,
 	buffer_size   : c.int,
 	input_text    : cstring,
 	buffer        : [256]u8,
-	input_builder : strings.Builder,
+	input_builder : str.Builder,
 } {
 	buffer_size = 64,
+	edit_mode   = true,
+}
+
+Fuzzy := struct {
+	score     : int,
+	max_score : int,
+	words     : [dynamic]cstring,
+} {
+	max_score = 0,
 }
 
 List := struct {
@@ -33,8 +59,9 @@ List := struct {
 	execs_fuzzied     : []cstring,
 	execs_untrimmed   : []cstring,
 	execs_searched    : [^]cstring,
-	execs_non_fuzzied : [dynamic]cstring,
+	execs_sorted      : [dynamic]cstring,
 	execs_trimmed     : [dynamic]cstring,
+	execs_non_fuzzied : [dynamic]cstring,
 	execs_dir         : ray.FilePathList,
 } {
 	size          = 5,
@@ -51,37 +78,35 @@ input :: proc() -> cstring {
 		Textbox.count += copy(Textbox.buffer[Textbox.count:] , byte[:width])
 	}
 
-	strings.write_string(&Textbox.input_builder , string(Textbox.buffer[:Textbox.count]))
+	str.write_string(&Textbox.input_builder , string(Textbox.buffer[:Textbox.count]))
 
-	return strings.to_cstring(&Textbox.input_builder)	
+	return str.to_cstring(&Textbox.input_builder)	
 }
 
 fuzzy :: proc(input: cstring, dictionary: ^[dynamic]cstring, results: int) -> []cstring {
 	scores := make(map[int][dynamic]cstring)
 	defer delete(scores)
 
-	max_score := 0
-
 	for word in dictionary {
-		score := strings.levenshtein_distance(string(input), string(word))
+		Fuzzy.score = str.levenshtein_distance(string(input),string(word))
 
-		if score in scores {
-			append(&scores[score], word)
+		if Fuzzy.score in scores {
+			append(&scores[Fuzzy.score], word)
 		} else {
-			scores[score] = make([dynamic]cstring)
-			append(&scores[score], word)
-			max_score = max(max_score, score)
+			scores[Fuzzy.score] = make([dynamic]cstring)
+			append(&scores[Fuzzy.score], word)
+			Fuzzy.max_score = max(Fuzzy.max_score, Fuzzy.score)
 		}
 	}
 
 	top := make([dynamic]cstring)
 
-	for i in 0..=max_score {
+	for i in 0..=Fuzzy.max_score {
 		if i in scores == false do continue
 
-		words := scores[i]
-		slice.sort(words[:])
-		append(&top,..words[:])
+		Fuzzy.words = scores[i]
+		slice.sort(Fuzzy.words[:])
+		append(&top,..Fuzzy.words[:])
 
 		if results != -1 && len(top) > results {
 			break
@@ -96,21 +121,21 @@ trimmer :: proc() -> [dynamic]cstring {
 	#no_bounds_check env : [^]cstring = &runtime.args__[len(runtime.args__) + 1]
 	path_var             : string     = string(env[162])
 
-	for execs_dir in strings.split_iterator(&path_var, ":") {
-		List.execs_dir            = ray.LoadDirectoryFiles(strings.clone_to_cstring(execs_dir))
+	for execs_dir in str.split_iterator(&path_var, ":") {
+		List.execs_dir       = ray.LoadDirectoryFiles(str.clone_to_cstring(execs_dir))
 		List.execs_untrimmed = List.execs_dir.paths[:List.execs_dir.count]
 
 		for &exec in List.execs_untrimmed {
-			exec = strings.clone_to_cstring(path.base(string(exec)))
+			exec = str.clone_to_cstring(path.base(string(exec)))
 
 			append(&List.execs_trimmed, exec)
 		}
 	}
 
 	sort.quick_sort(List.execs_trimmed[:])
-	execs_sorted := slice.clone_to_dynamic(slice.unique(List.execs_trimmed[:]))
+	List.execs_sorted = slice.clone_to_dynamic(slice.unique(List.execs_trimmed[:]))
 
-	return execs_sorted
+	return List.execs_sorted
 }
 
 main :: proc() {
@@ -118,6 +143,10 @@ main :: proc() {
 	defer ray.CloseWindow()
 
 	ray.SetTargetFPS(60)
+
+	ray.ClearBackground(ray.Color{17, 17, 27,255})
+
+	ray.GuiLoadStyle("mocha.rgs")
 
 	Textbox.input_text = input()
 
@@ -128,27 +157,43 @@ main :: proc() {
 		ray.BeginDrawing()
 		defer ray.EndDrawing()
 
-		ray.ClearBackground(ray.RAYWHITE)
-
 		List.execs_fuzzied = fuzzy(Textbox.input_text,&List.execs_non_fuzzied,int(List.size))
 		defer delete(List.execs_fuzzied)
 
 		List.execs_searched = raw_data(List.execs_fuzzied)
 
-		ray.GuiLabel(ray.Rectangle{140,10,40,30} , "Search")
+		Size.h = 30
+		Size.w = 40
 
-		ray.GuiTextBox(ray.Rectangle{110,35,100,20} , Textbox.input_text , Textbox.buffer_size , true)
+		Position.y = 10
+		Position.x = (SCREEN_WIDTH - Size.w) / 2
 
-		ray.GuiListViewEx(ray.Rectangle{92,70,130,155} , List.execs_searched , List.size , &List.scroll_index , &List.active , &List.focus)
+		ray.GuiLabel(ray.Rectangle{Position.x,Position.y,Size.w,Size.h} , "Search")
+
+		Size.h = 20
+		Size.w = 100
+
+		Position.y = 35
+		Position.x = (SCREEN_WIDTH - Size.w) / 2
+
+		ray.GuiTextBox(ray.Rectangle{Position.x,Position.y,Size.w,Size.h} , Textbox.input_text , Textbox.buffer_size , Textbox.edit_mode)
+
+		Size.h = 155
+		Size.w = 130
+
+		Position.y = 70
+		Position.x = (SCREEN_WIDTH - Size.w) / 2
+
+		ray.GuiListViewEx(ray.Rectangle{Position.x,Position.y,Size.w,Size.h} , List.execs_searched , List.size , &List.scroll_index , &List.active , &List.focus)
 
 		if !ray.IsKeyDown(ray.KeyboardKey.RIGHT_SHIFT) && ray.IsKeyPressed(ray.KeyboardKey.TAB) {
-			List.active       += 1
+			List.active += 1
 
 			if List.active == 5 do List.active = 0
 		}
 
 		if ray.IsKeyDown(ray.KeyboardKey.RIGHT_SHIFT) && ray.IsKeyPressed(ray.KeyboardKey.TAB) {
-			List.active       -= 1
+			List.active -= 1
 
 			if List.active < 0 do List.active = 4
 		}
@@ -160,4 +205,3 @@ main :: proc() {
 		}
 	}
 }
-
