@@ -1,5 +1,4 @@
 # Simple Search Utility
-*A minimal search utility.*
 - Uses the Levenshtein algorithm for fuzzy matching.
 - Scans the `PATH` variable to gather all executables.
 
