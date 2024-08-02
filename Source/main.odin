@@ -35,7 +35,7 @@ Textbox := struct {
 	edit_mode     : bool,
 	buffer_size   : c.int,
 	input_text    : cstring,
-	buffer        : [256]u8,
+	buffer        : [64]u8,
 	input_builder : str.Builder,
 } {
 	buffer_size = 64,
