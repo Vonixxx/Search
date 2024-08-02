@@ -144,9 +144,9 @@ main :: proc() {
 
 	ray.SetTargetFPS(60)
 
-	ray.ClearBackground(ray.Color{17, 17, 27,255})
-
 	ray.GuiLoadStyle("mocha.rgs")
+
+	ray.ClearBackground(ray.Color{17, 17, 27,255})
 
 	Textbox.input_text = input()
 
@@ -186,19 +186,19 @@ main :: proc() {
 
 		ray.GuiListViewEx(ray.Rectangle{Position.x,Position.y,Size.w,Size.h} , List.execs_searched , List.size , &List.scroll_index , &List.active , &List.focus)
 
-		if !ray.IsKeyDown(ray.KeyboardKey.RIGHT_SHIFT) && ray.IsKeyPressed(ray.KeyboardKey.TAB) {
+		if !ray.IsKeyDown(.RIGHT_SHIFT) && ray.IsKeyPressed(.TAB) {
 			List.active += 1
 
 			if List.active == 5 do List.active = 0
 		}
 
-		if ray.IsKeyDown(ray.KeyboardKey.RIGHT_SHIFT) && ray.IsKeyPressed(ray.KeyboardKey.TAB) {
+		if ray.IsKeyDown(.RIGHT_SHIFT) && ray.IsKeyPressed(.TAB) {
 			List.active -= 1
 
 			if List.active < 0 do List.active = 4
 		}
 
-		if ray.IsKeyPressed(ray.KeyboardKey.ENTER) {
+		if ray.IsKeyPressed(.ENTER) || ray.IsMouseButtonPressed(.LEFT) {
 			command_path : string = string(List.execs_searched[List.active])
 
 			os.execvp(command_path , nil)
