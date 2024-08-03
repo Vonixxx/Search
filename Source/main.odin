@@ -11,6 +11,7 @@ import ray  "vendor:raylib"
 import      "core:unicode/utf8"
 import path "core:path/filepath"
 
+BUFFER_SIZE   :: 64
 SCREEN_WIDTH  :: 320
 SCREEN_HEIGHT :: 240
 
@@ -35,11 +36,11 @@ Textbox := struct {
 	edit_mode     : bool,
 	buffer_size   : c.int,
 	input_text    : cstring,
-	buffer        : [64]u8,
 	input_builder : str.Builder,
+	buffer        : [BUFFER_SIZE]u8,
 } {
-	buffer_size = 64,
 	edit_mode   = true,
+	buffer_size = BUFFER_SIZE,
 }
 
 Fuzzy := struct {
@@ -51,10 +52,14 @@ Fuzzy := struct {
 }
 
 List := struct {
-	focus        : c.int,
-	active       : c.int,
-	size         : c.int,
-	scroll_index : c.int,
+	focus          : c.int,
+	active         : c.int,
+	size           : c.int,
+	scroll_index   : c.int,
+
+	env_vars_index : int,
+	env_path_var   : string,
+	env_vars       : []string,
 
 	execs_fuzzied     : []cstring,
 	execs_untrimmed   : []cstring,
@@ -119,9 +124,17 @@ fuzzy :: proc(input: cstring, dictionary: ^[dynamic]cstring, results: int) -> []
 
 trimmer :: proc() -> [dynamic]cstring {
 	#no_bounds_check env : [^]cstring = &runtime.args__[len(runtime.args__) + 1]
-	path_var             : string     = string(env[162])
 
-	for execs_dir in str.split_iterator(&path_var, ":") {
+	for List.env_vars_index = 0; env[List.env_vars_index] != nil; List.env_vars_index += 1 {
+		List.env_vars = make([]string, List.env_vars_index)
+
+		for &var,index in List.env_vars {
+			var = string(env[index])
+			if str.contains(var,"PATH=") do List.env_path_var = var
+		}
+	}
+
+	for execs_dir in str.split_iterator(&List.env_path_var, ":") {
 		List.execs_dir       = ray.LoadDirectoryFiles(str.clone_to_cstring(execs_dir))
 		List.execs_untrimmed = List.execs_dir.paths[:List.execs_dir.count]
 
@@ -144,7 +157,7 @@ main :: proc() {
 
 	ray.SetTargetFPS(60)
 
-	ray.GuiLoadStyle("mocha.rgs")
+	ray.GuiLoadStyle("./Source/mocha.rgs")
 
 	ray.ClearBackground(ray.Color{17, 17, 27,255})
 
