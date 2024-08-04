@@ -1,3 +1,4 @@
+
 {
  inputs = {
    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -10,7 +11,7 @@
 
  let
   pkgs = import nixpkgs {
-    system = "x86_64-linux";
+     system = "x86_64-linux";
   };
  in with pkgs; {
    devShells.x86_64-linux.default = mkShell {
@@ -18,10 +19,6 @@
         lib.makeLibraryPath [
          glfw
          libGL
-         SDL2
-         SDL2_mixer
-         SDL
-         vulkan-loader
          xorg.libX11
          xorg.libXi
         ]
@@ -36,19 +33,9 @@
            sha256 = "sha256-cIrTmAa3vBimPGkuSH3QM56LD64FxnIRthbTNxG1BwM=";
          };
        }))
-       # odin
-       gcc
        glfw
-       glxinfo
-       gnumake
        lld
        libGL
-       SDL2
-       SDL2_mixer
-       SDL
-       vulkan-headers
-       vulkan-loader
-       vulkan-tools
        xorg.libXi
        xorg.libX11
        xorg.libXft
