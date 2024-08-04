@@ -15,7 +15,7 @@ BUFFER_SIZE :: 64
 SCREEN_WIDTH :: 320
 SCREEN_HEIGHT :: 240
 
-RAYLIB_SHARED :: #config(RAYLIB_SHARED, true)
+RAYLIB_SHARED :: #config(RAYLIB_SHARED, false)
 
 Position := struct {
 	x: f32,
